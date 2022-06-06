@@ -10,7 +10,7 @@ int main() {
     char answer;
     cin >> answer;
     if (answer == 's') {
-        Server *server = new Server("localhost");
+        Server *server = new Server("*");
         server->start();
         while (true) {
             string message = server->readMessage();
