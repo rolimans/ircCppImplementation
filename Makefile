@@ -1,8 +1,8 @@
-CC=gcc
-LD=gcc
+CC=g++
+LD=g++
 
 CFLAGS=-Wall -Wextra -Werror -pedantic -g -O0
-LDLIBS=-lm -lstdc++
+LDLIBS=-lm -lstdc++ -lncurses -lreadline
 DLDFLAGS=-g
 LDFLAGS=
 

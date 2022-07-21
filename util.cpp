@@ -1,3 +1,4 @@
+#include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,4 +40,9 @@ std::string readLineCpp(FILE *stream) {
     std::string line = std::string(tmp);
     free(tmp);
     return line;
+}
+
+void exitFailure(std::string message) {
+    std::cerr << message << std::endl;
+    exit(EXIT_FAILURE);
 }
