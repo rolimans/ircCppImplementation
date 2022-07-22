@@ -1,7 +1,7 @@
 CC=g++
 LD=g++
 
-CFLAGS=-Wall -Wextra -Werror -pedantic -g -O0
+CFLAGS= -std=c++11 -pthread -Wall -Wextra -Werror -pedantic -g -O0
 LDLIBS=-lm -lstdc++ -lncurses -lreadline
 DLDFLAGS=-g
 LDFLAGS=
@@ -9,33 +9,33 @@ LDFLAGS=
 VFLAGS=--leak-check=full --show-leak-kinds=all --track-origins=yes
 
 SRCS    := $(wildcard ./*.cpp)
-OBJS    := $(patsubst ./%.cpp,./%.o,$(SRCS))
+SERVER_SRCS := $(filter-out %/client.cpp,$(SRCS))
+CLIENT_SRCS := $(filter-out %/server.cpp,$(SRCS))
+SERVER_OBJS    := $(patsubst ./%.cpp,./%.o,$(SERVER_SRCS))
+CLIENT_OBJS    := $(patsubst ./%.cpp,./%.o,$(CLIENT_SRCS))
 
-TARGET=main
-
-./%.o: ./%.cpp
-	$(CC) $(CFLAGS) -c $< -o $@
+SERVER_TARGET=server
+CLIENT_TARGET=client
 
 ./%.o: ./%.cpp ./%.hpp
 	$(CC) $(CFLAGS) -c $< -o $@
 
-all: $(OBJS)
-	$(LD) $(LDFLAGS) $^ -o $(TARGET) $(LDLIBS)
+server: $(SERVER_OBJS)
+	$(LD) $(LDFLAGS) $^ -o $(SERVER_TARGET) $(LDLIBS)
 
-debug: $(OBJS)
-	$(LD) $(DLDFLAGS) $(OBJS) -o $(TARGET) $(LDLIBS)
-
+client: $(CLIENT_OBJS)
+	$(LD) $(LDFLAGS) $^ -o $(CLIENT_TARGET) $(LDLIBS)
 clean:
-	rm -rf $(OBJS) $(TARGET)
+	rm -rf $(SERVER_OBJS) $(CLIENT_OBJS) $(SERVER_TARGET) $(CLIENT_TARGET) vgcore*
 
 hardClean:
-	rm -rf $(OBJS) $(TARGET) $(TARGET).zip *.cpp *.hpp *.in *.out vgcore* in out README.txt
+	rm -rf $(OBJS) $(SERVER_TARGET) $(CLIENT_TARGET) $(TARGET).zip *.cpp *.hpp *.in *.out vgcore* in out README.txt
 
-run: all
-	./$(TARGET)
+runServer: server
+	./$(SERVER_TARGET)
 
-valgrind: debug
-	valgrind $(VFLAGS) ./$(TARGET)
+runClient: client
+	./$(CLIENT_TARGET)
 
 zip:
-	zip -r $(TARGET).zip Makefile *.hpp *.cpp
+	zip -r main.zip LICENSE README.md Makefile *.hpp *.cpp

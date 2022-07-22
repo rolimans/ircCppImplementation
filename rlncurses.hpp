@@ -4,6 +4,7 @@
 #ifndef _RLNCURSES_HPP_
 #define _RLNCURSES_HPP_
 
+#include "Socket.hpp"
 #include "util.hpp"
 #include <curses.h>
 #include <functional>
@@ -16,31 +17,40 @@
 // checked version of fn(x, y, z).
 #define CHECK_NCURSES(fn, ...)                                                 \
     if (fn(__VA_ARGS__) == ERR)                                                \
-        this->exitFailing(#fn "(" #__VA_ARGS__ ") falhou!");
+        this->exitFailing(#fn "(" #__VA_ARGS__ ") failed!", EXIT_FAILURE);
 
-class RlNCursesGUI {
+#define CHECK_NCURSES_VOID(fn)                                                 \
+    if (fn() == ERR)                                                           \
+        this->exitFailing(#fn " failed!", EXIT_FAILURE);
+
+class GUI {
   public:
     using argsT = std::vector<std::string>;
     using commandFnT = std::function<int(const argsT &)>;
+    using messageFnT = std::function<int(std::string)>;
     void addCommand(std::string, commandFnT);
     std::vector<std::string> getCommands();
     int executeCommand(std::string);
-    void exitFailing(std::string);
-    RlNCursesGUI(RlNCursesGUI &other) = delete;
-    void operator=(const RlNCursesGUI &) = delete;
-    static RlNCursesGUI *GetInstance(std::string);
-    void addToWindow(std::string);
+    void exitFailing(std::string, int);
+    GUI(GUI &other) = delete;
+    void operator=(const GUI &) = delete;
+    static GUI *GetInstance(std::string);
+    static void addToWindow(std::string);
+    static void log(std::string);
     void init();
+    void enableMessaging(messageFnT);
     void close();
     void run();
+    void prepareClose(std::string message);
+    static void updatePrompt(SocketWithInfo *);
 
   private:
-    static RlNCursesGUI *singleton;
+    static GUI *singleton;
     static std::mutex singletonMutex;
 
-    RlNCursesGUI(std::string);
+    GUI(std::string);
 
-    ~RlNCursesGUI() {}
+    ~GUI() {}
 
     // Message window
     WINDOW *contentWindow;
@@ -68,10 +78,10 @@ class RlNCursesGUI {
     static commandCompletionFunction commandCompletion;
     static commandIteratorFunction commandIterator;
     // GNU Command Interfaces
-    using commandMap =
-        std::unordered_map<std::string, RlNCursesGUI::commandFnT>;
+    using commandMap = std::unordered_map<std::string, GUI::commandFnT>;
     commandMap commands;
 
+    GUI::messageFnT messageFn = nullptr;
     size_t strnwidth(const char *, size_t, size_t);
     size_t strwidth(const char *, size_t);
     static int readlineInputAvailable();

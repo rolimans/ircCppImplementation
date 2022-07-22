@@ -15,6 +15,8 @@ std::string readLineCpp(FILE *stream);
 
 char *readLine(FILE *stream);
 
-void exitFailure(std::string message);
+void exitFailure(std::string message, int code);
+
+void safeExitFailure(std::string message, int code);
 
 #endif

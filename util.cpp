@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "rlncurses.hpp"
 #include "util.hpp"
 
 char *readLine(FILE *stream) {
@@ -42,7 +43,12 @@ std::string readLineCpp(FILE *stream) {
     return line;
 }
 
-void exitFailure(std::string message) {
+void exitFailure(std::string message, int code) {
     std::cerr << message << std::endl;
-    exit(EXIT_FAILURE);
+    exit(code);
+}
+
+void safeExitFailure(std::string message, int code) {
+    GUI *gui = GUI::GetInstance("IRC> ");
+    gui->exitFailing(message, code);
 }

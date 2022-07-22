@@ -20,10 +20,12 @@
      CONTENT_WINDOW_MIN_HEIGHT)
 
 #include "rlncurses.hpp"
+#include "Socket.hpp"
 #include "util.hpp"
 #include <algorithm>
 #include <csignal>
 #include <curses.h>
+#include <iostream>
 #include <iterator>
 #include <mutex>
 #include <readline/history.h>
@@ -36,30 +38,28 @@
 #include <wchar.h>
 #include <wctype.h>
 
-RlNCursesGUI::RlNCursesGUI(std::string commandString) {
-    this->commandString = commandString;
-}
+GUI::GUI(std::string commandString) { this->commandString = commandString; }
 
-RlNCursesGUI *RlNCursesGUI::singleton = nullptr;
-std::mutex RlNCursesGUI::singletonMutex;
+GUI *GUI::singleton = nullptr;
+std::mutex GUI::singletonMutex;
 
-RlNCursesGUI *RlNCursesGUI::GetInstance(std::string commandString) {
+GUI *GUI::GetInstance(std::string commandString) {
 
     std::lock_guard<std::mutex> lock(singletonMutex);
 
     if (singleton == nullptr) {
-        singleton = new RlNCursesGUI(commandString);
+        singleton = new GUI(commandString);
     }
     return singleton;
 }
 
-void RlNCursesGUI::exitFailing(std::string message) {
+void GUI::exitFailing(std::string message, int exitCode) {
     // Make sure endwin() is only called in visual mode. As a note, calling it
     // twice does not seem to be supported and messed with the cursor position.
     if (isInGUI) {
         endwin();
     }
-    exitFailure(message);
+    exitFailure(message, exitCode);
 }
 
 // Calculates the cursor column for the readline window in a way that supports
@@ -76,7 +76,7 @@ void RlNCursesGUI::exitFailing(std::string message) {
 // get tab stops right.
 //
 // Makes a guess for malformed strings.
-size_t RlNCursesGUI::strnwidth(const char *s, size_t n, size_t offset) {
+size_t GUI::strnwidth(const char *s, size_t n, size_t offset) {
     mbstate_t shift_state;
     wchar_t wc;
     size_t wc_len;
@@ -113,29 +113,27 @@ size_t RlNCursesGUI::strnwidth(const char *s, size_t n, size_t offset) {
 }
 
 // Like strnwidth, but calculates the width of the entire string
-size_t RlNCursesGUI::strwidth(const char *s, size_t offset) {
+size_t GUI::strwidth(const char *s, size_t offset) {
     return this->strnwidth(s, SIZE_MAX, offset);
 }
 
 // Not bothering with 'isInputAvailable' and just returning 0 here seems to do
 // the right thing too, but this might be safer across readline versions
-int RlNCursesGUI::readlineInputAvailable() {
-    return singleton->isInputAvailable;
-}
+int GUI::readlineInputAvailable() { return singleton->isInputAvailable; }
 
-int RlNCursesGUI::readlineGetc(FILE *dummy) {
+int GUI::readlineGetc(FILE *dummy) {
     UNUSED(dummy);
     singleton->isInputAvailable = false;
     return singleton->input;
 }
 
-void RlNCursesGUI::forwardToReadline(char c) {
+void GUI::forwardToReadline(char c) {
     this->input = c;
     this->isInputAvailable = true;
     rl_callback_read_char();
 }
 
-void RlNCursesGUI::redisplayMessage(bool isResizing) {
+void GUI::redisplayMessage(bool isResizing) {
     CHECK_NCURSES(werase, contentWindow);
     CHECK_NCURSES(mvwaddstr, contentWindow, 0, 0, this->contentString.c_str());
 
@@ -145,20 +143,36 @@ void RlNCursesGUI::redisplayMessage(bool isResizing) {
     } else {
         CHECK_NCURSES(wrefresh, contentWindow);
     }
+
+    windowRedisplay(isResizing);
 }
 
-void RlNCursesGUI::addToWindow(std::string message) {
-    if (this->contentString.size() > 0) {
-        this->contentString += "\n";
+void GUI::log(std::string message) {
+    std::lock_guard<std::mutex> lock(singletonMutex);
+    if (singleton == nullptr || !singleton->isInGUI) {
+        std::cout << message << std::endl;
+    } else {
+        addToWindow("INFO: " + message);
     }
-    this->contentString += message;
-    this->redisplayMessage(false);
 }
 
-void RlNCursesGUI::setSuggestions(std::string suggestions) {
+void GUI::addToWindow(std::string message) {
+
+    if (singleton == nullptr || !singleton->isInGUI) {
+        safeExitFailure("Written to GUI window without initializing it", 1);
+    }
+
+    if (singleton->contentString.size() > 0) {
+        singleton->contentString += "\n";
+    }
+    singleton->contentString += message;
+    singleton->redisplayMessage(false);
+}
+
+void GUI::setSuggestions(std::string suggestions) {
 
     std::string suggestionsString =
-        suggestions != "" ? "Comandos recomendados: \n" + suggestions + "\n"
+        suggestions != "" ? "Recommended commands: \n" + suggestions + "\n"
                           : "";
 
     CHECK_NCURSES(werase, suggestionWindow);
@@ -166,9 +180,9 @@ void RlNCursesGUI::setSuggestions(std::string suggestions) {
     CHECK_NCURSES(wrefresh, suggestionWindow);
 }
 
-void RlNCursesGUI::handleCommand(char *line) {
+void GUI::handleCommand(char *line) {
     if (!line) {
-        singleton->shouldClose = true;
+        singleton->prepareClose("Exiting...");
         return;
     }
 
@@ -181,7 +195,12 @@ void RlNCursesGUI::handleCommand(char *line) {
     free(line);
 }
 
-void RlNCursesGUI::windowRedisplay(bool isResizing) {
+void GUI::prepareClose(std::string message) {
+    this->addToWindow(message);
+    this->shouldClose = true;
+}
+
+void GUI::windowRedisplay(bool isResizing) {
     size_t prompt_width = strwidth(rl_display_prompt, 0);
     size_t cursor_col =
         prompt_width + strnwidth(rl_line_buffer, rl_point, prompt_width);
@@ -206,9 +225,9 @@ void RlNCursesGUI::windowRedisplay(bool isResizing) {
     }
 }
 
-void RlNCursesGUI::readlineRedisplay() { singleton->windowRedisplay(false); }
+void GUI::readlineRedisplay() { singleton->windowRedisplay(false); }
 
-void RlNCursesGUI::resize() {
+void GUI::resize() {
     if (LINES >= MIN_WINDOW_HEIGHT) {
         CHECK_NCURSES(wresize, contentWindow, CONTENT_WINDOW_HEIGHT, COLS);
         CHECK_NCURSES(wresize, suggestionWindow, SUGGESTION_WINDOW_HEIGHT,
@@ -220,22 +239,21 @@ void RlNCursesGUI::resize() {
 
     // Batch refreshes and commit them with doupdate()
     redisplayMessage(true);
-    windowRedisplay(true);
-    CHECK_NCURSES(doupdate);
+    CHECK_NCURSES_VOID(doupdate);
 }
 
-void RlNCursesGUI::initNCurses() {
+void GUI::initNCurses() {
 
     if (!initscr()) {
-        exitFailing("Falha ao inicializar o ncurses!");
+        exitFailing("Failed to initialize ncurses!", EXIT_FAILURE);
     }
 
     isInGUI = true;
 
-    CHECK_NCURSES(raw);
-    CHECK_NCURSES(cbreak);
-    CHECK_NCURSES(noecho);
-    CHECK_NCURSES(nonl);
+    CHECK_NCURSES_VOID(raw);
+    CHECK_NCURSES_VOID(cbreak);
+    CHECK_NCURSES_VOID(noecho);
+    CHECK_NCURSES_VOID(nonl);
     CHECK_NCURSES(intrflush, NULL, FALSE);
     // Do not enable keypad() since we want to pass unadulterated input to
     // readline
@@ -261,26 +279,26 @@ void RlNCursesGUI::initNCurses() {
         suggestionWindow = newwin(1, COLS, 0, 0);
     }
     if (!contentWindow || !commandWindow || !suggestionWindow) {
-        exitFailing("Falha ao alocar as janelas!");
+        exitFailing("Failed to allocate windows!", EXIT_FAILURE);
     }
     // Allow strings longer than the message window and show only the last part
     // if the string doesn't fit
     CHECK_NCURSES(scrollok, contentWindow, TRUE);
 }
 
-void RlNCursesGUI::closeNCurses() {
+void GUI::closeNCurses() {
     CHECK_NCURSES(delwin, contentWindow);
     CHECK_NCURSES(delwin, commandWindow);
     CHECK_NCURSES(delwin, suggestionWindow);
-    CHECK_NCURSES(endwin);
+    CHECK_NCURSES_VOID(endwin);
     isInGUI = false;
 }
 
-void RlNCursesGUI::initSignalHandler() { signal(SIGINT, SIG_IGN); }
+void GUI::initSignalHandler() { signal(SIGINT, SIG_IGN); }
 
-void RlNCursesGUI::closeSignalHandler() { signal(SIGINT, SIG_DFL); }
+void GUI::closeSignalHandler() { signal(SIGINT, SIG_DFL); }
 
-void RlNCursesGUI::initReadline() {
+void GUI::initReadline() {
 
     // Let ncurses do all terminal and signal handling
     rl_catch_signals = 0;
@@ -304,7 +322,7 @@ void RlNCursesGUI::initReadline() {
 
     commands["/help"] = [this](const argsT &) {
         auto commands = getCommands();
-        std::string help = "Comandos disponíveis: ";
+        std::string help = "Available commands: ";
 
         for (auto &command : commands) {
             help += command + " ";
@@ -316,22 +334,22 @@ void RlNCursesGUI::initReadline() {
     };
 
     commands["/quit"] = [this](const argsT &) {
-        shouldClose = true;
+        this->prepareClose("Exiting...");
         return 0;
     };
 
     rl_callback_handler_install(commandString.c_str(), handleCommand);
 }
 
-void RlNCursesGUI::closeReadline() { rl_callback_handler_remove(); }
+void GUI::closeReadline() { rl_callback_handler_remove(); }
 
-char RlNCursesGUI::readFromGUI() { return wgetch(commandWindow); }
+char GUI::readFromGUI() { return wgetch(commandWindow); }
 
-void RlNCursesGUI::addCommand(std::string command, commandFnT fn) {
+void GUI::addCommand(std::string command, commandFnT fn) {
     commands[command] = fn;
 }
 
-std::vector<std::string> RlNCursesGUI::getCommands() {
+std::vector<std::string> GUI::getCommands() {
     std::vector<std::string> allCommands;
     for (auto commandPair : commands) {
         allCommands.push_back(commandPair.first);
@@ -340,9 +358,29 @@ std::vector<std::string> RlNCursesGUI::getCommands() {
     return allCommands;
 }
 
-char *RlNCursesGUI::commandIterator(const char *text, int state) {
+void GUI::updatePrompt(SocketWithInfo *user) {
 
-    static RlNCursesGUI::commandMap::iterator it;
+    if (singleton == nullptr || !singleton->isInGUI) {
+        safeExitFailure("Cannot updated prompt without initializing GUI!",
+                        EXIT_FAILURE);
+    }
+
+    std::string newString = user->nickname;
+
+    if (user->channel != "") {
+        newString += "@" + user->channel;
+    }
+
+    newString += "> ";
+
+    singleton->commandString = newString;
+    rl_set_prompt(singleton->commandString.c_str());
+    singleton->windowRedisplay(false);
+}
+
+char *GUI::commandIterator(const char *text, int state) {
+
+    static GUI::commandMap::iterator it;
 
     auto &commands = singleton->commands;
 
@@ -361,13 +399,12 @@ char *RlNCursesGUI::commandIterator(const char *text, int state) {
     return nullptr;
 }
 
-char **RlNCursesGUI::commandCompletion(const char *text, int start, int) {
+char **GUI::commandCompletion(const char *text, int start, int) {
     char **completionList = nullptr;
     rl_attempted_completion_over = 1;
 
     if (start == 0) {
-        completionList =
-            rl_completion_matches(text, RlNCursesGUI::commandIterator);
+        completionList = rl_completion_matches(text, GUI::commandIterator);
     }
 
     std::string suggestions = "";
@@ -393,7 +430,12 @@ char **RlNCursesGUI::commandCompletion(const char *text, int start, int) {
     return completionList;
 }
 
-int RlNCursesGUI::executeCommand(std::string command) {
+int GUI::executeCommand(std::string command) {
+
+    if (messageFn != nullptr && command[0] != '/') {
+        return messageFn(command);
+    }
+
     std::vector<std::string> inputs;
     {
         std::istringstream iss(command);
@@ -406,20 +448,21 @@ int RlNCursesGUI::executeCommand(std::string command) {
         return 0;
     }
 
-    RlNCursesGUI::commandMap::iterator it;
+    GUI::commandMap::iterator it;
 
     if ((it = commands.find(inputs[0])) != end(commands)) {
         return static_cast<int>((it->second)(inputs));
     }
 
-    addToWindow(
-        "Comando " + inputs[0] +
-        " não encontrado! Execute /help para ver os comandos disponíveis\n");
+    addToWindow("Command " + inputs[0] +
+                " not found! Run /help to see available commands.\n");
 
     return 1;
 }
 
-void RlNCursesGUI::init() {
+void GUI::enableMessaging(messageFnT fn) { messageFn = fn; }
+
+void GUI::init() {
 
     if (isInGUI) {
         return;
@@ -430,7 +473,7 @@ void RlNCursesGUI::init() {
     this->initReadline();
 }
 
-void RlNCursesGUI::close() {
+void GUI::close() {
     if (!isInGUI) {
         return;
     }
@@ -440,10 +483,10 @@ void RlNCursesGUI::close() {
     this->closeSignalHandler();
 }
 
-void RlNCursesGUI::run() {
+void GUI::run() {
 
     if (!isInGUI) {
-        exitFailing("Não é possível executar o GUI sem antes iniciá-lo!");
+        exitFailing("Can't run GUI without initializing it!", EXIT_FAILURE);
     }
 
     if (this->isRunning) {
