@@ -2,7 +2,7 @@
 
 IRC Implementation in CPP
 
-Implementation made for the discipline of Computer Networks - SSC0142, ICMC-USP
+Implementation made for the discipline of Computer Networks - SSC0142 at ICMC - USP
 
 ## Students:
 
