@@ -16,6 +16,7 @@ Implementation made for the discipline of Computer Networks - SSC0142 at ICMC - 
 - Kernel Release: 5.15.28-1-MANJARO
 - Architecture: x86_64
 - Compiler: g++ (GCC) 12.1.0
+- C++ Standard: C++11
 - Linker: GNU ld (GNU Binutils) 2.38
 
 ## Instructions:
